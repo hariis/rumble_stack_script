@@ -1,131 +1,138 @@
+
 #!/bin/bash
+# 
+# Installs MySQL, Ruby Enterprise edition, and Nginx with Passenger, Rails 2.3.9 along with Twitter, oauth2 gems. 
+# It also adds REE to the system-wide $PATH
+#
+# <UDF name="ree_version" Label="Ruby Enterprise Edition Version" default="1.8.7-2010.01" example="1.8.7-2010.01" />
+# <UDF name="install_prefix" Label="Install Prefix for REE and Passenger" default="/opt/local" example="/opt/local will install REE to /opt/local/ree" />
+# <UDF name="rr_env" Label="Rails/Rack environment to run" default="production" />
+# <udf name="gems_to_install1" label="Gems to install" manyOf="mysql,capistrano,twitter,json,oauth2" default="mysql,capistrano,twitter,json,oauth2" example="Each selected gem will be installed." />
+# <udf name="gems_to_install2" label="More gems to install" default="rails -v 2.3.9,rack -v 1.0.1" example="Comma separated inputs to gem install. Example: rails,nifty-generators,formtastic,... Add the -v if you need a specific version." />
 
-# <udf name="sys_hostname" label="Hostname" />
-# <udf name="project_name" label="Project Name" example="Will be used to name folders and files" />
-# <udf name="deploy_password" label="Non-root Password" example="Non-root password for all services and users" />
-# <udf name="my_ssh_public_key" label="Your SSH Public Key" example="REQUIRED! try `cat ~/.ssh/id_rsa.pub | pbcopy`" />
-# <udf name="ruby" label="Ruby to Install" oneOf="ree,ruby-1.8.7,ruby-1.9.2,jruby,rbx" default="ruby-1.8.7" />
-# <udf name="persistence" label="Persistence" manyOf="MySQL,MongoDB" default="MySQL" />
-# <udf name="servers" label="Servers" manyOf="nginx,node.js" example="node.js is not implemented"  default="nginx"/>
+source <ssinclude StackScriptID=904> # Enable Universe
 
-function split {
-  echo $(echo $1 | tr "," "\n")
-}
+logfile="/root/log.txt"
+rubyscript="/root/ruby_script_to_run.rb" 
 
-function system_install_logrotate {
-  apt-get -y install logrotate
-}
+# This script is generated and run after gem is installed to
+# install the list of gems given by the stack script."
 
-function system_sshd_append {
-  # $1 configuration option
-  # $2 value to set
-  echo "$1 $2" >> /etc/ssh/sshd_config
-}
+export logfile
+export gems_to_install1="$GEMS_TO_INSTALL1"
+export gems_to_install2="$GEMS_TO_INSTALL2"
+# exported to be available in ruby_script_to_run.rb
 
-function rvm_install {
-  # $1 - username
-  RVM_USER=$1
-  apt-get -y install build-essential bison openssl libreadline5 libreadline5-dev curl git-core zlib1g zlib1g-dev libssl-dev libsqlite3-0 libsqlite3-dev sqlite3 libxml2-dev
-  AS_USER="sudo -u $RVM_USER -i --"
-  $AS_USER 'bash < <( curl http://rvm.beginrescueend.com/releases/rvm-install-head )'
-  $AS_USER "sed -i -e 's/^\[ -z \"\$PS1\" \] && return$/if [[ -n \"\$PS1\" ]]; then/' .bashrc && echo 'fi' >> .bashrc"
-  $AS_USER "echo '[[ -s \"\$HOME/.rvm/scripts/rvm\" ]] && . \"\$HOME/.rvm/scripts/rvm\"' >> .bashrc"
-
-  apt-get install -y libxslt1-dev libxslt-ruby
-}
-
-function rvm_default_ruby {
-  # $1 - username
-  # $2 - ruby
-  RVM_USER=$1
-  THE_RUBY=$2
-  AS_USER="sudo -u $RVM_USER -i --"
-  $AS_USER "rvm install $THE_RUBY"
-  $AS_USER "rvm --default $THE_RUBY"
-}
-
-function rvm_setup_project {
-  # $1 - username
-  # $2 - project_name
-  AS_USER="sudo -u $1 -i --"
-  PROJ=$2
-  echo "Installing Phusion Passenger"
-  $AS_USER "rvm gemset create $PROJ && rvm gemset use $PROJ && gem install --pre passenger"
-  $AS_USER "mkdir ~/${PROJ}"
-  $AS_USER "echo 'rvm gemset use $PROJ' > ~/${PROJ}/.rvmrc"
-  $AS_USER "rvm rvmrc trust ~/${PROJ}"
-}
-
-function rvm_setup_project_with_nginx {
-  # $1 - username
-  # $2 - project_name
-  USERNAME=$1
-  PROJ=$2
-  AS_USER="sudo -u $USERNAME -i --"
-
-  apt-get install -y zlib1g-dev libcurl4-openssl-dev
-  mkdir /opt/nginx
-  chown $USERNAME:$USERNAME /opt/nginx
-  echo "Installing Phusion Passenger for nginx"
-  $AS_USER "cd $PROJ && passenger-install-nginx-module --auto --prefix=/opt/nginx --auto-download --extra-configure-flags=--with-http_ssl_module"
-  curl http://github.com/ivanvanderbyl/rails-nginx-passenger-ubuntu/raw/master/nginx/nginx -o /etc/init.d/nginx && chmod +x /etc/init.d/nginx
-  /etc/init.d/nginx start
-  /usr/sbin/update-rc.d -f nginx defaults
-}
-
-function mongodb_install {
-  echo "deb http://downloads.mongodb.org/distros/ubuntu 10.4 10gen" >> /etc/apt/sources.list
-  apt-key adv --keyserver keyserver.ubuntu.com --recv 7F0CEB10
-  aptitude update
-  apt-get install -y mongodb-stable
-}
-
-function user_ssh_keygen {
-  # $1 - username
-  sudo -u $1 -i -- "ssh-keygen -N '' -f ~/.ssh/id_rsa -t rsa -q"
-}
-
-exec &> /root/stackscript.log
-source <ssinclude StackScriptID="1">
 system_update
+echo "System Updated" >> $logfile
+postfix_install_loopback_only
+echo "postfix_install_loopback_only" >> $logfile
+mysql_install "$DB_PASSWORD" && mysql_tune 40
+echo "Mysql installed" >> $logfile
+mysql_create_database "$DB_PASSWORD" "$DB_NAME"
+mysql_create_user "$DB_PASSWORD" "$DB_USER" "$DB_USER_PASSWORD"
+mysql_grant_user "$DB_PASSWORD" "$DB_USER" "$DB_NAME"
 
-source <ssinclude StackScriptID="123">
-system_add_user deploy $DEPLOY_PASSWORD "users,sudo"
-system_user_add_ssh_key deploy "$MY_SSH_PUBLIC_KEY"
 
-# stackscript 1
-goodstuff
 
-# stackscript 123
-system_enable_universe
-system_security_ufw_install
-system_security_ufw_configure_basic
-system_update_locale_en_US_UTF_8
-system_sshd_permitrootlogin No
-system_sshd_passwordauthentication No
-system_sshd_pubkeyauthentication Yes
-system_sshd_append ClientAliveInterval 60
-/etc/init.d/ssh restart
-system_update_hostname "$SYS_HOSTNAME"
+# Set up some necessary ENV variables
+  # Should be set from UDF if run through Linode
+  if [ ! -n "$REE_VERSION" ]; then
+    REE_VERSION="1.8.7-2010.01"
+  fi
+  if [ ! -n "$INSTALL_PREFIX" ]; then
+    INSTALL_PREFIX="/usr/local"
+  fi
+  if [ ! -n "$RR_ENV" ]; then
+    RR_ENV="production"
+  fi
+  if [ ! -n "$TMPDIR" ]; then
+    TMPDIR="/var/tmp"
+  fi
 
-user_ssh_keygen deploy
+  REE_NAME="ruby-enterprise-$REE_VERSION"
+  REE_FILENAME="$REE_NAME.tar.gz"
+  REE_DOWNLOAD="http://rubyforge.org/frs/download.php/68719/$REE_FILENAME"
+  WORKING_DIR="$TMPDIR/flux-setup"
 
-if [[ -n "$(echo $PERSISTENCE | grep 'MySQL')" ]]; then
-  mysql_install "$DEPLOY_PASSWORD"
-  mysql_tune 30
-fi
+  mkdir -p "$WORKING_DIR"
 
-if [[ -n "$(echo $PERSISTENCE | grep 'MongoDB')" ]]; then
-  mongodb_install
-fi
 
-system_install_logrotate
+# Set up Ruby Enterprise Edition
+  # Dependencies
+  apt-get -y install build-essential zlib1g-dev libssl-dev libreadline5-dev
 
-rvm_install deploy
-rvm_default_ruby deploy "$RUBY"
+  # Download
+  cd       "$WORKING_DIR"
+  wget     "$REE_DOWNLOAD" -O "$REE_FILENAME"
+  tar xzf  "$REE_FILENAME"
+  cd       "$REE_NAME"
+  
+  # Install
+  ./installer --auto="$INSTALL_PREFIX/$REE_NAME"
+  ln -s "$INSTALL_PREFIX/$REE_NAME" "$INSTALL_PREFIX/ree"
 
-rvm_setup_project deploy "$PROJECT_NAME"
+  # Add REE to the PATH
+  PATH="$INSTALL_PREFIX/ree/bin:$PATH"
 
-if [[ -n "#(echo $SERVERS | grep 'nginx')" ]]; then
-  rvm_setup_project_with_nginx deploy "$PROJECT_NAME"
-fi
+# Set up Nginx and Passenger
+  passenger-install-nginx-module --auto --auto-download --prefix="$INSTALL_PREFIX/nginx"
+
+  
+echo "" >> $logfile
+echo "Downloading Ruby Gems with wget http://rubyforge.org/frs/download.php/69365/rubygems-1.3.6.tgz" >> $logfile
+echo "" >> $logfile
+wget http://rubyforge.org/frs/download.php/69365/rubygems-1.3.6.tgz >> $logfile
+
+echo ""
+echo "tar output:"
+tar xzvf rubygems-1.3.6.tgz  >> $logfile
+rm rubygems-1.3.6.tgz
+
+echo ""
+echo "rubygems setup:"
+cd rubygems-1.3.6
+ruby setup.rb >> $logfile
+cd /
+rm -rf rubygems-1.3.6
+
+echo ""
+echo "gem update --system:"
+gem update --system >> $logfile
+
+# echo the ruby code to a file to be run
+echo "
+    ##### Ruby Code Starts Here #####
+
+    gems_to_install1 = ENV['gems_to_install1']
+    gems_to_install2 = ENV['gems_to_install2']
+    
+    puts gems_to_install1
+    puts gems_to_install2
+    
+    gems_to_install1.split(',').each do |gem_name|
+      \`gem install #{gem_name} >> $logfile\`
+    end
+    
+    gems_to_install2.split(',').each do |gem_name|
+      \`gem install #{gem_name} >> $logfile\`
+    end
+
+	 ##### Ruby Code Ends Here #####" >> $rubyscript
+	 
+	ruby $rubyscript >> $logfile
+
+# Set up environment
+# Global environment variables
+  cat > /etc/environment << EOF
+PATH="$PATH"
+RAILS_ENV="$RR_ENV"
+RACK_ENV="$RR_ENV"
+EOF
+
+
+# Clean up
+  rm -rf "$WORKING_DIR"
+
+restartServices
+echo "StackScript Finished!" >> $logfile
