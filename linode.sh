@@ -4,9 +4,9 @@
 # <udf name="project_name" label="Project Name" example="Will be used to name folders and files" />
 # <udf name="deploy_password" label="Non-root Password" example="Non-root password for all services and users" />
 # <udf name="my_ssh_public_key" label="Your SSH Public Key" example="REQUIRED! try `cat ~/.ssh/id_rsa.pub | pbcopy`" />
-# <udf name="ruby" label="Ruby to Install" oneOf="ree,ruby-1.8.7,ruby-1.9.2,jruby,rbx" default="ruby-1.9.2" />
-# <udf name="persistence" label="Persistence" manyOf="MySQL,MongoDB" default="MySQL,MongoDB" />
-# <udf name="servers" label="Servers" manyOf="nginx,node.js" example="node.js is not implemented" />
+# <udf name="ruby" label="Ruby to Install" oneOf="ree,ruby-1.8.7,ruby-1.9.2,jruby,rbx" default="ruby-1.8.7" />
+# <udf name="persistence" label="Persistence" manyOf="MySQL,MongoDB" default="MySQL" />
+# <udf name="servers" label="Servers" manyOf="nginx,node.js" example="node.js is not implemented"  default="nginx"/>
 
 function split {
   echo $(echo $1 | tr "," "\n")
